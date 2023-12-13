@@ -9,7 +9,7 @@ pip install gymnasium torch
 
 ## execute code
 ```
-python reinforment.py
+python Reinforment.py
 ```
 
 # golf course create ramdonly
