@@ -11,6 +11,9 @@ pip install gymnasium torch
 ```
 python Reinforment.py
 ```
+## In Colab
+1. downlaod the file : reinforcement.ipynb
+2. execute
 
 # golf course create ramdonly
 <img width="448" alt="image" src="https://github.com/Jeremy-su1/RL-project/assets/44183045/2cc35447-ab6b-4ee7-a07d-e2a0b48b916a">
