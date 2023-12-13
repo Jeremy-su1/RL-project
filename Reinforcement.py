@@ -9,6 +9,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from collections import deque
 import collections
+import matplotlib.pyplot as plt
 
 # Hyperparameters
 learning_rate = 0.0005
@@ -62,9 +63,9 @@ class GolfCourseEnv(gym.Env):
 
         # Calculate the distance to the hole
         hole_distance = np.linalg.norm(np.array(self.hole_position) - np.array(new_position))
-        done = hole_distance < 1
+        done = hole_distance < 0.1
 
-        print(f"Hole distance: hole position {hole_distance}")
+        #print(f"Hole distance: hole position {hole_distance}")
         print(f"Action taken: Angle {angle}, Power {power}")
         print(f"New Position: {new_position}, Reward: {reward}")
         print(f"Distance to Hole: {hole_distance}")
@@ -122,33 +123,25 @@ class GolfCourseEnv(gym.Env):
         else:
             return position  # If the new position is outside the course, keep the same position
 
-        # Prevent moving away from the hole
-        #new_distance_to_hole = np.linalg.norm(np.array(self.hole_position) - np.array(new_position))
-        #current_distance_to_hole = np.linalg.norm(np.array(self.hole_position) - np.array(position))
-        #if new_distance_to_hole > current_distance_to_hole:
-        #    return position  # If the new position is further from the hole, keep the same position
-
-        #return new_position
-
     def _calculate_reward(self, new_position):
         # Calculate the reward
         distance_before = np.linalg.norm(np.array(self.hole_position) - np.array(self.ball_position))
         distance_after = np.linalg.norm(np.array(self.hole_position) - np.array(new_position))
-        reward_distance = max(0, distance_before - distance_after)
-
-        # Apply penalty if moving away from the hole
-        if distance_after > distance_before:
-            return -10
+        #reward_distance = max(0, distance_before - distance_after)
+        reward_distance = (distance_before - distance_after) * 19
 
         # Penalty for landing in hazards
         reward_hazard = 0
-        if 0 <= int(new_position[1]) < self.course.shape[0] and 0 <= int(new_position[0]) < self.course.shape[1]:
-            if self.course[int(new_position[1]), int(new_position[0])] in [self.BUNKER, self.WATER]:
-                reward_hazard = -2
+        #if 0 <= int(new_position[1]) < self.course.shape[0] and 0 <= int(new_position[0]) < self.course.shape[1]:
+        #    if self.course[int(new_position[1]), int(new_position[0])] in [self.BUNKER, self.WATER]:
+        #        reward_hazard = -2
+        if self.course[int(new_position[1]), int(new_position[0])] in [self.BUNKER, self.WATER]:
+          reward_hazard = -0.5
 
         # Reward based on the number of shots taken
-        reward_shot_count = -0.5 * self.shot_count
+        reward_shot_count = -0.1 * self.shot_count
         total_reward = reward_distance + reward_hazard + reward_shot_count
+        #total_reward = reward_distance + reward_hazard
         return total_reward
 
     def calculate_distance_to_hole(self):
@@ -230,8 +223,11 @@ def train(q, q_target, memory, optimizer):
         loss.backward()
         optimizer.step()
 
-# Define the main function
+
 def main():
+    rewards = []
+    success_rates = []
+    average_steps = []
     # Initialize the environment and agent
     env = GolfCourseEnv()
     q = Qnet(env.state_size, env.action_size)
@@ -240,44 +236,65 @@ def main():
     memory = ReplayBuffer()
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
-    score = 0.0
     print_interval = 5
 
     # Training loop
-    for episode in range(10):
+    for episode in range(50):
         epsilon = max(0.01, 0.08 - 0.01 * (episode / 200))  # Initialize epsilon
         state = env.reset()
         done = False
+        episode_reward = 0
+        episode_steps = 0
+        success = False
 
-        # long time depense
-        step_count = 0
-        max_steps = 1000  # Set a maximum number of steps per episode
-
-        print(f"Starting Episode {episode}")  # Message indicating the start of the episode
-
-        while not done and step_count < max_steps:
-            step_count += 1
+        while not done:
+            episode_steps += 1
             state_tensor = torch.from_numpy(np.array(state, dtype=np.float32))
             action = q.sample_action(state_tensor, epsilon)
             next_state, reward, done, _ = env.step(action)
             memory.put((state, action, reward, next_state, done))
             state = next_state
-            score += reward
+            episode_reward += reward
 
-            print(f"  Step: Action {action}, Reward {reward}, New state {next_state}")  # Print step information
+            if done:
+                success = True
 
             if memory.size() > 1000:
-                print("  Starting Training")  # Message indicating the start of training
                 train(q, q_target, memory, optimizer)
-                print("  Training Complete")  # Message indicating the completion of training
-            if step_count >= max_steps:
+
+            if episode_steps >= 1000:
                 done = True
-                print("Reached maximum steps for this episode.")
+
+        print(f"Episode {episode} - Total Reward: {episode_reward}, Total Steps: {episode_steps}")
+        rewards.append(episode_reward)
+        success_rates.append(1 if success else 0)
+        average_steps.append(episode_steps)
+
         if episode % print_interval == 0 and episode != 0:
             q_target.load_state_dict(q.state_dict())
-            print(f"n_episode: {episode}, score: {score / print_interval:.1f}, n_buffer: {memory.size()}, eps: {epsilon * 100:.1f}%")
-            score = 0.0
 
+    # Plotting the graphs
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 3, 1)
+    plt.plot(rewards)
+    plt.title('Episode Rewards')
+    plt.xlabel('Episode')
+    plt.ylabel('Total Reward')
+
+    plt.subplot(1, 3, 2)
+    plt.plot(success_rates)
+    plt.title('Success Rate')
+    plt.xlabel('Episode')
+    plt.ylabel('Success Rate')
+
+    plt.subplot(1, 3, 3)
+    plt.plot(average_steps)
+    plt.title('Average Steps per Episode')
+    plt.xlabel('Episode')
+    plt.ylabel('Average Steps')
+
+    plt.tight_layout()
+    plt.show()
     env.close()
 
 if __name__ == '__main__':
